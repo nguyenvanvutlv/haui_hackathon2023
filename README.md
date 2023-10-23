@@ -53,7 +53,7 @@ pip install 'git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonA
 
 
 ### ByteTrack
-```
+```bibtex
 @article{zhang2022bytetrack,
   title={ByteTrack: Multi-Object Tracking by Associating Every Detection Box},
   author={Zhang, Yifu and Sun, Peize and Jiang, Yi and Yu, Dongdong and Weng, Fucheng and Yuan, Zehuan and Luo, Ping and Liu, Wenyu and Wang, Xinggang},
