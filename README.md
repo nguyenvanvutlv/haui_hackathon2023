@@ -47,7 +47,7 @@ pip install 'git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonA
 
 ## DEMO
 
-format: <track_id><age><gender>
+format: track_id age gender
 
 <img src="demo/out.jpg" width="1000"/>
 
