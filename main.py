@@ -3,9 +3,11 @@ import torch
 import cv2
 import os.path as osp
 
+from copy import deepcopy
+
 # IMPORT CONFIG FILE
 from utlis.config import *
-from utlis.recognition import AgeGenderRecognition
+from utlis.recognition import AgeGenderRecognition, draw_boxes
 
 # BYTETRACK REQUIREMENT
 from ByteTrack.yolox.data.data_augment import preproc
@@ -17,15 +19,17 @@ from ByteTrack.yolox.tracking_utils.timer import Timer
 # LOGGER
 from loguru import logger
 
+# ULTRALYTICS
+from MiVOLO.mivolo.structures import PersonAndFaceResult
+from ultralytics.yolo.engine.results import Results
+
 
 def make_parser():
     parser = argparse.ArgumentParser("HACKATHON 2023!!!")
 
-    # SETUP INPUT, OUTPUT DIR
+    # SETUP INPUT DIR
     parser.add_argument("-in", "--path", default=PATH, type=str,
                         help="path image or video")
-    parser.add_argument("-out", "--output",
-                        default=OUTPUT, type=str)
 
     # GET TYPE OF INPUT [IMAGE OR VIDEO]
     parser.add_argument("-t", "--type", default=TYPE_PATH,
@@ -167,8 +171,95 @@ class Predictor(object):
         return outputs, img_info
 
 
-def video(predictor, recognition):
-    print(args.path)
+def video(predictor: Predictor, recognition: AgeGenderRecognition, args):
+    object_results = None
+
+    # INIT CAMERA
+    camera = cv2.VideoCapture(args.path)
+    width = camera.get(cv2.CAP_PROP_FRAME_WIDTH)
+    height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    fps = camera.get(cv2.CAP_PROP_FPS)
+
+    # SAVE VIDEO AND TEXT RESULT
+    save_video = osp.join("output/video", args.path.split("/")[-1])
+    save_text = osp.join("output/text", args.path.split("/")
+                         [-1].split(".")[0] + ".txt")
+
+    logger.info(f"video save_path is {save_video}")
+    logger.info(f"text save_path is {save_text}")
+
+    # VIDEO WRITETR
+    video_writer = cv2.VideoWriter(
+        save_video, cv2.VideoWriter_fourcc(
+            *"mp4v"), fps, (int(width), int(height))
+    )
+
+    # START DETECT AND TRACKING
+    tracker = BYTETracker(args, frame_rate=30)
+    timer = Timer()
+    frame_id = 1
+    # save result
+    results = []
+
+    try:
+        while 1:
+            res, frame = camera.read()
+            if frame is None:
+                break
+            base_image = deepcopy(frame)
+            if object_results is None:
+                object_results = Results(orig_img=base_image.copy(), names={
+                                         0: 'person', 1: 'face'}, path="")
+            outputs, img_info = predictor.inference(base_image, timer)
+            if len(outputs):
+                # UPDATE POSITION EACH TRACK
+                online_tracker = tracker.update(
+                    outputs[0],
+                    [img_info['height'],
+                     img_info['width']],
+                    exp.test_size
+                )
+                boxes = []
+                confs = []
+                trackids = []
+                for index, object in enumerate(online_tracker):
+                    tlwh = object.tlwh
+
+                    # CONDITION TO AUTHEN BOX
+                    vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
+                    if tlwh[2] * tlwh[3] > args.min_box_area and not vertical:
+                        boxes.append(
+                            [tlwh[0], tlwh[1], tlwh[2] + tlwh[0], tlwh[3] + tlwh[1], object.score, 0])
+                        confs.append(object.score)
+                        trackids.append(object.track_id)
+
+                # UPDATE BOXES DETECTED TO RESULT
+                object_results.orig_img = img_info['raw_img']
+                object_results.update(boxes=torch.Tensor(
+                    boxes).cuda(), masks=None, probs=torch.Tensor(confs).cuda())
+                detected_objects = PersonAndFaceResult(object_results)
+                detected_objects: PersonAndFaceResult = recognition.custom_recognize(
+                    img_info['raw_img'], detected_objects)
+
+                # GET AGE / GENDER
+                xyxy = object_results.boxes.xyxy.cpu().numpy()
+
+                img = draw_boxes(img_info['raw_img'].copy(), xyxy, trackids,
+                                 detected_objects.genders, detected_objects.ages)
+                cv2.imwrite("output/out.jpg", img)
+
+                break
+            else:
+                pass
+
+            if cv2.waitKey(1) & 0xFF == ord('x'):
+                break
+    except KeyboardInterrupt:
+        print("Interrupt")
+    except RuntimeError as error:
+        print(error)
+    finally:
+        camera.release()
 
 
 def setup_env(exp, args):
@@ -210,7 +301,7 @@ def setup_env(exp, args):
     # age and gender recognition
     recognition = AgeGenderRecognition(args, verbose=True)
 
-    video(predictor, recognition)
+    video(predictor, recognition, args)
 
 
 if __name__ == "__main__":
