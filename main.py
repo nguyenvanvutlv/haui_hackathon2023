@@ -2,12 +2,13 @@ import argparse
 import torch
 import cv2
 import os.path as osp
+import time
 
 from copy import deepcopy
 
 # IMPORT CONFIG FILE
 from utlis.config import *
-from utlis.recognition import AgeGenderRecognition, draw_boxes
+from utlis.recognition import AgeGenderRecognition, draw_boxes, convert_result
 
 # BYTETRACK REQUIREMENT
 from ByteTrack.yolox.data.data_augment import preproc
@@ -22,6 +23,7 @@ from loguru import logger
 # ULTRALYTICS
 from MiVOLO.mivolo.structures import PersonAndFaceResult
 from ultralytics.yolo.engine.results import Results
+from ultralytics.yolo.utils.ops import xyxy2ltwh
 
 
 def make_parser():
@@ -185,28 +187,35 @@ def video(predictor: Predictor, recognition: AgeGenderRecognition, args):
     save_text = osp.join("output/text", args.path.split("/")
                          [-1].split(".")[0] + ".txt")
 
-    logger.info(f"video save_path is {save_video}")
+    # logger.info(f"video save_path is {save_video}")
     logger.info(f"text save_path is {save_text}")
 
     # VIDEO WRITETR
-    video_writer = cv2.VideoWriter(
-        save_video, cv2.VideoWriter_fourcc(
-            *"mp4v"), fps, (int(width), int(height))
-    )
+    # video_writer = cv2.VideoWriter(
+    #     save_video, cv2.VideoWriter_fourcc(
+    #         *"mp4v"), fps, (int(width), int(height))
+    # )
 
     # START DETECT AND TRACKING
     tracker = BYTETracker(args, frame_rate=30)
     timer = Timer()
-    frame_id = 1
+    frame_id = 0
     # save result
     results = []
+    # used to record the time when we processed last frame
+    prev_frame_time = 0
 
+    # used to record the time at which we processed current frame
+    new_frame_time = 0
     try:
         while 1:
             res, frame = camera.read()
             if frame is None:
                 break
+            logger.info(f"Frame: {frame_id}")
+            frame_id += 1
             base_image = deepcopy(frame)
+            save_image = deepcopy(frame)
             if object_results is None:
                 object_results = Results(orig_img=base_image.copy(), names={
                                          0: 'person', 1: 'face'}, path="")
@@ -228,6 +237,12 @@ def video(predictor: Predictor, recognition: AgeGenderRecognition, args):
                     # CONDITION TO AUTHEN BOX
                     vertical = tlwh[2] / tlwh[3] > args.aspect_ratio_thresh
                     if tlwh[2] * tlwh[3] > args.min_box_area and not vertical:
+                        if tlwh[0] < 0:
+                            tlwh[2] += tlwh[0]
+                            tlwh[0] = 0
+                        if tlwh[1] < 0:
+                            tlwh[3] += tlwh[1]
+                            tlwh[1] = 0
                         boxes.append(
                             [tlwh[0], tlwh[1], tlwh[2] + tlwh[0], tlwh[3] + tlwh[1], object.score, 0])
                         confs.append(object.score)
@@ -242,15 +257,32 @@ def video(predictor: Predictor, recognition: AgeGenderRecognition, args):
                     img_info['raw_img'], detected_objects)
 
                 # GET AGE / GENDER
+                ages = detected_objects.ages
+                genders = detected_objects.genders
                 xyxy = object_results.boxes.xyxy.cpu().numpy()
 
-                img = draw_boxes(img_info['raw_img'].copy(), xyxy, trackids,
-                                 detected_objects.genders, detected_objects.ages)
-                cv2.imwrite("output/out.jpg", img)
+                for index, trackid in enumerate(trackids):
+                    a, g = convert_result(ages[index], genders[index])
+                    x1, y1, x2, y2 = xyxy[index]
+                    x, y = x1, y1
+                    w, h = x2 - x1, y2 - y1
+                    results.append(
+                        f"{frame_id},{trackid},{round(x, 2)},{round(y, 2)},{round(w, 2)},{round(h, 2)},{a},{g}\n")
 
-                break
-            else:
-                pass
+            timer.toc()
+            # new_frame_time = time.time()
+            # fps = 1/(new_frame_time-prev_frame_time)
+            # prev_frame_time = new_frame_time
+            # cv2.putText(
+            #     save_image,
+            #     str(fps),
+            #     (10, 10),
+            #     cv2.FONT_HERSHEY_PLAIN,
+            #     1.6,
+            #     [255, 255, 255],
+            #     2
+            # )
+            # video_writer.write(save_image)
 
             if cv2.waitKey(1) & 0xFF == ord('x'):
                 break
@@ -260,6 +292,10 @@ def video(predictor: Predictor, recognition: AgeGenderRecognition, args):
         print(error)
     finally:
         camera.release()
+        # video_writer.release()
+    with open(save_text, "w") as f:
+        for result in results:
+            f.write(result)
 
 
 def setup_env(exp, args):
@@ -301,7 +337,38 @@ def setup_env(exp, args):
     # age and gender recognition
     recognition = AgeGenderRecognition(args, verbose=True)
 
+    args.path = "input/hackathon/Doto_103.mp4"
     video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Doto_116.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Doto_132.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Doto_134.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_1.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_8.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_9.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_12.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_75.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_83.mp4"
+    # video(predictor, recognition, args)
+
+    # args.path = "input/hackathon/Kabu_88.mp4"
+    # video(predictor, recognition, args)
 
 
 if __name__ == "__main__":
