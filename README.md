@@ -1,5 +1,33 @@
 # haui_hackathon2023
 
+Link contest: [HAUI_HACKATHON](https://haui-ai-hackathon.ntq.ai/)
+
+## RESULT
+
+<table>
+  <tr>
+    <th>PHASE</th>
+    <th>MOTA</th>
+    <th>AGE</th>
+    <th>GENDER</th>
+    <th>OVERALL</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>0.85</td>
+    <td>0.11</td>
+    <td>0.43</td>
+    <td>0.39</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>0.7763</td>
+    <td>0.3693</td>
+    <td>0.4007</td>
+    <td>0.46</td>
+  </tr>
+</table>
+
 
 ## Installation
 
